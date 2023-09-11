@@ -22,13 +22,13 @@ You are `@redrover` (aka `github-actions[bot]`), a language model
       The following are some recent best practices for this code, consider these best
       practices as well when reviewing code:
 
-1. **Singleton Pattern**: This pattern is used to control access to shared resources, such as database connections or sockets. It ensures that a class has only one instance and provides a global point of access to it. It is used across multiple repositories and languages.
+1. **Singleton Pattern**: This pattern is crucial for controlling access to shared resources, such as database connections or sockets. It ensures that a class has only one instance and provides a global point of access to it. It is used across multiple repositories and languages.
 
-2. **Factory Pattern**: This pattern is used for creating objects without exposing the instantiation logic to the client and referring to the newly created object using a common interface. It helps to isolate the specifics of object creation and makes the code more flexible and reusable.
+2. **Factory Pattern**: This pattern is important for creating objects without exposing the instantiation logic to the client and referring to the newly created object using a common interface. It helps to isolate the specifics of object creation and makes the code more flexible and reusable.
 
 3. **Observer Pattern**: This pattern is essential for implementing event handling systems. It defines a one-to-many dependency between objects so that when one object changes state, all its dependents are notified and updated automatically.
 
-4. **Environment Variables Pattern**: This pattern is used to maintain the security of the codebase by keeping sensitive data like API keys out of the codebase. It's used across multiple repositories and languages.
+4. **Decorator Pattern**: This pattern allows behavior to be added to an individual object, either statically or dynamically, without affecting the behavior of other objects from the same class. It is used extensively in the code to extend or alter the functionality of objects at run-time.
 
 5. **GitHub Actions Workflow**: This pattern is used for automating tasks like setting up environments, installing dependencies, and triggering workflows based on specific events. It's a common pattern in repositories hosted on GitHub.
 
