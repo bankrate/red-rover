@@ -45,7 +45,7 @@ jobs:
 
       - name: Create Pull Request
         id: cpr
-        uses: peter-evans/create-pull-request@v5
+        uses: peter-evans/create-pull-request@v6
         with:
           title: "Update Red Rover standards specific to this repo - ${{ steps.date.outputs.date }}"
           body: "Some notes about this automatically generated PR:\n
