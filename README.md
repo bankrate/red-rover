@@ -1,57 +1,13 @@
-# RedRover - An OpenAI ChatGPT-based PR reviewer and summarizer
+# RedRover - AI-powered PR reviewer and summarizer
 
 ![small-red-rover](https://github.com/bankrate/red-rover/assets/64108082/9ee5df3f-bc3f-4bfc-878e-171d7ccca96e)
 
 ## Overview
 
 RedRover is an AI-based code reviewer and summarizer for
-GitHub pull requests using OpenAI's `gpt-3.5-turbo` and `gpt-4` models. It is
+GitHub pull requests supporting both OpenAI and Anthropic models. It is
 designed to be used as a GitHub Action and can be configured to run on every
 pull request and review comments
-
-## Reviewer Features:
-
-- **PR Summarization**: It generates a summary and release notes of the changes
-  in the pull request.
-- **Line-by-line code change suggestions**: Reviews the changes line by line and
-  provides code change suggestions.
-- **Continuous, incremental reviews**: Reviews are performed on each commit
-  within a pull request, rather than a one-time review on the entire pull
-  request.
-- **Cost-effective and reduced noise**: Incremental reviews save on OpenAI costs
-  and reduce noise by tracking changed files between commits and the base of the
-  pull request.
-- **"Light" model for summary**: Designed to be used with a "light"
-  summarization model (e.g. `gpt-3.5-turbo`) and a "heavy" review model (e.g.
-  `gpt-4`). _For best results, use `gpt-4` as the "heavy" model, as thorough
-  code review needs strong reasoning abilities._
-- **Chat with bot**: Supports conversation with the bot in the context of lines
-  of code or entire files, useful for providing context, generating test cases,
-  and reducing code complexity.
-- **Smart review skipping**: By default, skips in-depth review for simple
-  changes (e.g. typo fixes) and when changes look good for the most part. It can
-  be disabled by setting `review_simple_changes` and `review_comment_lgtm` to
-  `true`.
-- **Less verbose reviews**: For more experienced users the Red Rover can err on 
-  side of ignoring a change unless it is a major one. This is disabled by default,
-  to enable set `review_simple_changes` to `false` and `less_verbose_review` to
-  `true`.
-- **Customizable prompts**: Tailor the `system_message`, `summarize`, and
-  `summarize_release_notes` prompts to focus on specific aspects of the review
-  process or even change the review objective.
-
-To use this tool, you need to add the provided YAML file to your repository and
-configure the required environment variables, such as `GITHUB_TOKEN` and
-`OPENAI_API_KEY`. For more information on usage, examples, and development 
-you can refer to the sections below.
-
-- [Overview](#overview)
-- [Professional Version of RedRover](#professional-version-of-RedRover)
-- [Reviewer Features](#reviewer-features)
-- [Install instructions](#install-instructions)
-- [Conversation with RedRover](#conversation-with-RedRover)
-- [Examples](#examples)
-- [Developing](#developing)
 
 ## Install instructions
 
@@ -68,11 +24,10 @@ permissions:
 on:
   pull_request:
   pull_request_review_comment:
-    types: [ created ]
+    types: [created]
 
 concurrency:
-  group:
-    ${{ github.repository }}-${{ github.event.number || github.head_ref ||
+  group: ${{ github.repository }}-${{ github.event.number || github.head_ref ||
     github.sha }}-${{ github.workflow }}-${{ github.event_name ==
     'pull_request_review_comment' && 'pr_comment' || 'pr' }}
   cancel-in-progress: ${{ github.event_name != 'pull_request_review_comment' }}
@@ -81,36 +36,88 @@ jobs:
   review:
     runs-on: ubuntu-latest
     steps:
-      - uses: bankrate/red-rover@main
+      - uses: bankrate/red-rover@latest
         env:
-          GITHUB_TOKEN: ${{ secrets.ORG_GITHUB_ACTION_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.BANKRATE_BOT_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          # ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }} # Uncomment if using Anthropic
         with:
-          debug: false
+          model_provider: openai # or 'anthropic'
+          light_model: gpt-4.1-mini # or 'claude-3-5-haiku-20241022'
+          heavy_model: gpt-4.1 # or 'o4-mini', 'claude-sonnet-4-20250514'
           review_simple_changes: false
+          less_verbose_review: false
           review_comment_lgtm: false
+          poem_enabled: false
+          debug: false
 ```
 
 #### Environment variables
 
 - `GITHUB_TOKEN`: This should already be available to the GitHub Action
   environment. This is used to add comments to the pull request.
-- `OPENAI_API_KEY`: use this to authenticate with OpenAI API. You can get one
+- `OPENAI_API_KEY`: Required if using OpenAI models. You can get one
   [here](https://platform.openai.com/account/api-keys). Please add this key to
+  your GitHub Action secrets.
+- `ANTHROPIC_API_KEY`: Required if using Anthropic models. You can get one
+  [here](https://console.anthropic.com/). Please add this key to
   your GitHub Action secrets.
 - `OPENAI_API_ORG`: (optional) use this to use the specified organization with
   OpenAI API if you have multiple. Please add this key to your GitHub Action
   secrets.
 
-### Models: `gpt-4` and `gpt-3.5-turbo`
+### Supported Models
 
-Recommend using `gpt-3.5-turbo` for lighter tasks such as summarizing the
-changes (`openai_light_model` in configuration) and `gpt-4` for more complex
-review and commenting tasks (`openai_heavy_model` in configuration).
+#### OpenAI Models
+- **Light models**: `gpt-4o-mini`, `gpt-4.1-mini`
+- **Heavy models**: `gpt-4o`, `gpt-4.1`, `o4-mini`, `o3`
 
-Costs: `gpt-3.5-turbo` is dirt cheap. `gpt-4` is orders of magnitude more
-expensive, but the results are vastly superior. We are typically spending $20 a
-day for a 20 developer team with `gpt-4` based review and commenting.
+#### Anthropic Models
+- **Light models**: `claude-3-5-haiku-20241022`
+- **Heavy models**: `claude-sonnet-4-20250514`, `claude-opus-4-20250514`
+
+Recommend using lighter models for summarizing changes and heavier models for complex
+review and commenting tasks.
+
+Costs vary by model - lighter models are significantly cheaper while heavier models
+provide superior results for complex reasoning tasks.
+
+## Reviewer Features:
+
+- **PR Summarization**: It generates a summary and release notes of the changes
+  in the pull request.
+- **Line-by-line code change suggestions**: Reviews the changes line by line and
+  provides code change suggestions.
+- **Continuous, incremental reviews**: Reviews are performed on each commit
+  within a pull request, rather than a one-time review on the entire pull
+  request.
+- **Cost-effective and reduced noise**: Incremental reviews save on API costs
+  and reduce noise by tracking changed files between commits and the base of the
+  pull request.
+- **"Light" model for summary**: Designed to be used with a "light"
+  summarization model (e.g. `gpt-4.1-mini`, `claude-3-5-haiku-20241022`) and a "heavy" review model (e.g.
+  `gpt-4.1`, `o4-mini`, `claude-sonnet-4-20250514`. _For best results, use advanced models as the "heavy" model, as thorough
+  code review needs strong reasoning abilities.
+- **Multi-provider support**: Choose between OpenAI and Anthropic models based on your needs.
+  Supports OpenAI's thinking models (o1, o3, etc.) which automatically disable temperature and system messages.
+- **Chat with bot**: Supports conversation with the bot in the context of lines
+  of code or entire files, useful for providing context, generating test cases,
+  and reducing code complexity.
+- **Smart review skipping**: By default, skips in-depth review for simple
+  changes (e.g. typo fixes) and when changes look good for the most part. It can
+  be disabled by setting `review_simple_changes` and `review_comment_lgtm` to
+  `true`.
+- **Less verbose reviews**: For more experienced users the Red Rover can err on 
+  side of ignoring a change unless it is a major one. This is disabled by default,
+  to enable set `review_simple_changes` to `false` and `less_verbose_review` to
+  `true`.
+- **Customizable prompts**: Tailor the `system_message`, `summarize`, and
+  `summarize_release_notes` prompts to focus on specific aspects of the review
+  process or even change the review objective.
+
+To use this tool, you need to add the provided YAML file to your repository and
+configure the required environment variables, such as `GITHUB_TOKEN` and either
+`OPENAI_API_KEY` or `ANTHROPIC_API_KEY` depending on your chosen provider.
 
 ### Prompts & Configuration
 
@@ -124,29 +131,29 @@ value. For example, to review docs/blog posts, you can use the following prompt:
 
 ```yaml
 system_message: |
-  You are `@redrover` (aka `github-actions[dog]`), a language model
-  trained by OpenAI. Your purpose is to act as a highly experienced
-  DevRel (developer relations) professional with focus on cloud-native
-  infrastructure.
+  You are `@redrover` (aka `github-actions[bot]`), an AI assistant
+  trained to act as a highly experienced software engineer. Your purpose
+  is to provide thorough reviews of code changes and suggest improvements
+  in key areas such as:
+    - Logic
+    - Security
+    - Performance
+    - Data races
+    - Consistency
+    - Error handling
+    - Maintainability
+    - Modularity
+    - Complexity
+    - Optimization
+    - Best practices: DRY, SOLID, KISS
 
-  Company context -
-  RedRover is an AI-powered Code reviewer.It boosts code quality and cuts manual effort. Offers context-aware, line-by-line feedback, highlights critical changes,
-  enables bot interaction, and lets you commit suggestions directly from GitHub.
-
-  When reviewing or generating content focus on key areas such as -
-  - Accuracy
-  - Relevance
-  - Clarity
-  - Technical depth
-  - Call-to-action
-  - SEO optimization
-  - Brand consistency
-  - Grammar and prose
-  - Typos
-  - Hyperlink suggestions
-  - Graphics or images (suggest Dall-E image prompts if needed)
-  - Empathy
-  - Engagement
+  Do not comment on minor code style issues, missing 
+  comments/documentation. Identify and resolve significant 
+  concerns to improve overall code quality while deliberately 
+  disregarding minor issues.
+  
+  When providing summaries, be factual and objective. Do not add 
+  editorial comments, opinions, praise, or introductory phrases.
 ```
 
 </details>
@@ -213,11 +220,10 @@ messages
 
 ### Disclaimer
 
-- Your code (files, diff, PR title/description) will be sent to OpenAI's servers
-  for processing. Please check with your compliance team before using this on
+- Your code (files, diff, PR title/description) will be sent to your chosen AI provider's servers
+  (OpenAI or Anthropic) for processing. Please check with your compliance team before using this on
   your private code repositories.
-- OpenAI's API is used instead of ChatGPT session on their portal. OpenAI API
-  has a
-  [more conservative data usage policy](https://openai.com/policies/api-data-usage-policies)
-  compared to their ChatGPT offering.
-- This action is not affiliated with OpenAI.
+- Both OpenAI and Anthropic APIs have data usage policies:
+  - [OpenAI API data usage policy](https://openai.com/policies/api-data-usage-policies)
+  - [Anthropic data usage policy](https://www.anthropic.com/legal/privacy)
+- This action is not affiliated with OpenAI or Anthropic.

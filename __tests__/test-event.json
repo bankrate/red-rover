@@ -1,0 +1,27 @@
+{
+  "action": "opened",
+  "pull_request": {
+    "number": TEST_PR_NUMBER,
+    "title": "Test PR",
+    "body": "Test description",
+    "state": "open",
+    "base": {
+      "sha": "abc123",
+      "ref": "main"
+    },
+    "head": {
+      "sha": "def456",
+      "ref": "test-branch"
+    },
+    "user": {
+      "login": "test-user"
+    }
+  },
+  "repository": {
+    "name": "TEST_REPO_NAME",
+    "owner": {
+      "login": "TEST_REPO_OWNER"
+    },
+    "default_branch": "main"
+  }
+}

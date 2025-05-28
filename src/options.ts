@@ -2,6 +2,19 @@ import {info} from '@actions/core'
 import {minimatch} from 'minimatch'
 import {TokenLimits} from './limits'
 
+export type ModelProvider = 'openai' | 'anthropic'
+
+export interface ModelConfig {
+  provider: ModelProvider
+  lightModel: string
+  heavyModel: string
+  temperature?: number
+  retries: number
+  timeoutMS: number
+  apiKey?: string
+  apiBaseUrl?: string
+}
+
 export class Options {
   debug: boolean
   disableReview: boolean
@@ -12,16 +25,13 @@ export class Options {
   reviewCommentLGTM: boolean
   pathFilters: PathFilter
   systemMessage: string
-  openaiLightModel: string
-  openaiHeavyModel: string
-  openaiModelTemperature: number
-  openaiRetries: number
-  openaiTimeoutMS: number
-  openaiConcurrencyLimit: number
-  githubConcurrencyLimit: number
+  modelConfig: ModelConfig
+  concurrencyLimits: {
+    model: number
+    github: number
+  }
   lightTokenLimits: TokenLimits
   heavyTokenLimits: TokenLimits
-  apiBaseUrl: string
   language: string
 
   constructor(
@@ -34,14 +44,15 @@ export class Options {
     reviewCommentLGTM = false,
     pathFilters: string[] | null = null,
     systemMessage = '',
-    openaiLightModel = 'gpt-3.5-turbo',
-    openaiHeavyModel = 'gpt-3.5-turbo',
-    openaiModelTemperature = '0.0',
-    openaiRetries = '3',
-    openaiTimeoutMS = '120000',
-    openaiConcurrencyLimit = '6',
+    provider: ModelProvider = 'openai',
+    lightModel = 'gpt-4o-mini',
+    heavyModel = 'gpt-4o',
+    modelTemperature = '0.0',
+    modelRetries = '3',
+    modelTimeoutMS = '120000',
+    modelConcurrencyLimit = '6',
     githubConcurrencyLimit = '6',
-    apiBaseUrl = 'https://api.openai.com/v1',
+    apiBaseUrl?: string,
     language = 'en-US'
   ) {
     this.debug = debug
@@ -53,16 +64,21 @@ export class Options {
     this.reviewCommentLGTM = reviewCommentLGTM
     this.pathFilters = new PathFilter(pathFilters)
     this.systemMessage = systemMessage
-    this.openaiLightModel = openaiLightModel
-    this.openaiHeavyModel = openaiHeavyModel
-    this.openaiModelTemperature = parseFloat(openaiModelTemperature)
-    this.openaiRetries = parseInt(openaiRetries)
-    this.openaiTimeoutMS = parseInt(openaiTimeoutMS)
-    this.openaiConcurrencyLimit = parseInt(openaiConcurrencyLimit)
-    this.githubConcurrencyLimit = parseInt(githubConcurrencyLimit)
-    this.lightTokenLimits = new TokenLimits(openaiLightModel)
-    this.heavyTokenLimits = new TokenLimits(openaiHeavyModel)
-    this.apiBaseUrl = apiBaseUrl
+    this.modelConfig = {
+      provider,
+      lightModel,
+      heavyModel,
+      temperature: parseFloat(modelTemperature),
+      retries: parseInt(modelRetries),
+      timeoutMS: parseInt(modelTimeoutMS),
+      apiBaseUrl
+    }
+    this.concurrencyLimits = {
+      model: parseInt(modelConcurrencyLimit),
+      github: parseInt(githubConcurrencyLimit)
+    }
+    this.lightTokenLimits = new TokenLimits(lightModel)
+    this.heavyTokenLimits = new TokenLimits(heavyModel)
     this.language = language
   }
 
@@ -77,16 +93,17 @@ export class Options {
     info(`review_comment_lgtm: ${this.reviewCommentLGTM}`)
     info(`path_filters: ${this.pathFilters}`)
     info(`system_message: ${this.systemMessage}`)
-    info(`openai_light_model: ${this.openaiLightModel}`)
-    info(`openai_heavy_model: ${this.openaiHeavyModel}`)
-    info(`openai_model_temperature: ${this.openaiModelTemperature}`)
-    info(`openai_retries: ${this.openaiRetries}`)
-    info(`openai_timeout_ms: ${this.openaiTimeoutMS}`)
-    info(`openai_concurrency_limit: ${this.openaiConcurrencyLimit}`)
-    info(`github_concurrency_limit: ${this.githubConcurrencyLimit}`)
+    info(`model_provider: ${this.modelConfig.provider}`)
+    info(`light_model: ${this.modelConfig.lightModel}`)
+    info(`heavy_model: ${this.modelConfig.heavyModel}`)
+    info(`model_temperature: ${this.modelConfig.temperature}`)
+    info(`model_retries: ${this.modelConfig.retries}`)
+    info(`model_timeout_ms: ${this.modelConfig.timeoutMS}`)
+    info(`model_concurrency_limit: ${this.concurrencyLimits.model}`)
+    info(`github_concurrency_limit: ${this.concurrencyLimits.github}`)
     info(`summary_token_limits: ${this.lightTokenLimits.string()}`)
     info(`review_token_limits: ${this.heavyTokenLimits.string()}`)
-    info(`api_base_url: ${this.apiBaseUrl}`)
+    info(`api_base_url: ${this.modelConfig.apiBaseUrl}`)
     info(`language: ${this.language}`)
   }
 
@@ -139,19 +156,5 @@ export class PathFilter {
     }
 
     return (!inclusionRuleExists || included) && !excluded
-  }
-}
-
-export class OpenAIOptions {
-  model: string
-  tokenLimits: TokenLimits
-
-  constructor(model = 'gpt-3.5-turbo', tokenLimits: TokenLimits | null = null) {
-    this.model = model
-    if (tokenLimits != null) {
-      this.tokenLimits = tokenLimits
-    } else {
-      this.tokenLimits = new TokenLimits(model)
-    }
   }
 }

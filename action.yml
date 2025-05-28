@@ -148,35 +148,37 @@ inputs:
     required: false
     description: 'Disable release notes'
     default: 'false'
-  openai_base_url:
+  model_provider:
     required: false
-    description: 'The url of the openai api interface.'
-    default: 'https://api.openai.com/v1'
-  openai_light_model:
+    description: 'The AI model provider to use (openai or anthropic)'
+    default: 'openai'
+  model_base_url:
     required: false
-    description:
-      'Model to use for simple tasks like summarizing diff on a file.'
-    default: 'gpt-3.5-turbo'
-  openai_heavy_model:
+    description: 'The base URL for model API calls (only needed for custom endpoints)'
+    default: ''
+  light_model:
     required: false
-    description: 'Model to use for complex tasks such as code reviews.'
-    default: 'gpt-4'
-  openai_model_temperature:
+    description: 'Model to use for simple tasks like summarizing diff on a file (e.g., gpt-4.1-mini or claude-3-5-haiku-20241022)'
+    default: 'gpt-4.1-mini'
+  heavy_model:
     required: false
-    description: 'Temperature for GPT model'
+    description: 'Model to use for complex tasks such as code reviews (e.g., gpt-4.1, o4-mini or claude-sonnet-4-20250514)'
+    default: 'gpt-4.1'
+  model_temperature:
+    required: false
+    description: 'Temperature setting for the model'
     default: '0.05'
-  openai_retries:
+  model_retries:
     required: false
-    description:
-      'How many times to retry OpenAI API in case of timeouts or errors?'
+    description: 'How many times to retry API calls in case of timeouts or errors'
     default: '5'
-  openai_timeout_ms:
+  model_timeout_ms:
     required: false
-    description: 'Timeout for OpenAI API call in millis'
+    description: 'Timeout for model API calls in milliseconds'
     default: '360000'
-  openai_concurrency_limit:
+  model_concurrency_limit:
     required: false
-    description: 'How many concurrent API calls to make to OpenAI servers?'
+    description: 'How many concurrent API calls to make to the model provider'
     default: '6'
   github_concurrency_limit:
     required: false
@@ -186,10 +188,10 @@ inputs:
     required: false
     description: 'System message to be sent to OpenAI'
     default: |
-      You are `@redrover` (aka `github-actions[bot]`), a language model
-      trained by OpenAI. Your purpose is to act as a highly experienced
-      software engineer and provide a thorough review of the code hunks
-      and suggest code snippets to improve key areas such as:
+      You are `@redrover` (aka `github-actions[bot]`), an AI assistant
+      trained to act as a highly experienced software engineer. Your purpose
+      is to provide thorough reviews of code changes and suggest improvements
+      in key areas such as:
         - Logic
         - Security
         - Performance
@@ -206,6 +208,9 @@ inputs:
       comments/documentation. Identify and resolve significant 
       concerns to improve overall code quality while deliberately 
       disregarding minor issues.
+      
+      When providing summaries, be factual and objective. Do not add 
+      editorial comments, opinions, praise, or introductory phrases.
   summarize:
     required: false
     description: 'The prompt for final summarization response'
@@ -217,8 +222,14 @@ inputs:
       **Changes**: A markdown table of files and their summaries. Group files 
       with similar changes together into a single row to save space.
 
-      Avoid additional commentary as this summary will be added as a comment on the 
-      GitHub pull request. Use the titles "Walkthrough" and "Changes" and they must be H2.
+      IMPORTANT: 
+      - Do NOT add any editorial comments, opinions, or praise (e.g., "This is excellent", "Great work")
+      - Do NOT include introductory phrases like "Here's my analysis" or "This summary shows"
+      - Start directly with the requested content
+      - Be factual and objective only
+      - This will be posted directly as a GitHub comment
+      
+      Use the titles "Walkthrough" and "Changes" and they must be H2.
   summarize_release_notes:
     required: false
     description:

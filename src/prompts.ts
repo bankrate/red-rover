@@ -104,6 +104,9 @@ Instructions:
 - Do not provide any instructions to the bot on how to perform the review.
 - Do not mention that files need a through review or caution about potential issues.
 - Do not mention that these changes affect the logic or functionality of the code.
+- Do not add editorial comments, opinions, or praise.
+- Do not include introductory phrases like "Here's my analysis" or "This summary shows".
+- Be factual and objective only.
 - The summary should not exceed 500 words.
 `
 
@@ -314,7 +317,26 @@ $comment
     return inputs.render(this.comment)
   }
 
-  renderReviewFileDiff(inputs: Inputs): string {
-    return inputs.render(this.reviewFileDiff)
+  renderReviewFileDiff(inputs: Inputs, reviewSimpleChanges = true): string {
+    let prompt = this.reviewFileDiff
+    
+    // Add instructions to ignore simple changes when reviewSimpleChanges is false
+    if (!reviewSimpleChanges) {
+      prompt = prompt.replace(
+        '- Do NOT provide general feedback, summaries, explanations of changes, or praises \n  for making good additions.',
+        `- Do NOT provide general feedback, summaries, explanations of changes, or praises 
+  for making good additions.
+- Do NOT comment on minor code style issues such as:
+  - Indentation or whitespace changes
+  - Formatting changes that don't affect functionality
+  - Import statement reordering
+  - Variable renaming that doesn't change behavior
+  - Comment formatting
+  - Line breaks or spacing adjustments
+- Focus ONLY on substantive issues that affect logic, security, performance, or correctness.`
+      )
+    }
+    
+    return inputs.render(prompt)
   }
 }

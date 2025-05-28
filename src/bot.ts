@@ -1,128 +1,267 @@
 import './fetch-polyfill'
 
-import {info, setFailed, warning} from '@actions/core'
-import {
-  ChatGPTAPI,
-  ChatGPTError,
-  ChatMessage,
-  SendMessageOptions
-  // eslint-disable-next-line import/no-unresolved
-} from 'chatgpt'
+import {info, warning} from '@actions/core'
+import OpenAI from 'openai'
+import Anthropic from '@anthropic-ai/sdk'
+import type {ChatCompletionMessageParam} from 'openai/resources/chat/completions'
 import pRetry from 'p-retry'
-import {OpenAIOptions, Options} from './options'
+import {Options} from './options'
+
+interface ModelClient {
+  chat(
+    // eslint-disable-next-line no-unused-vars
+    message: string,
+    // eslint-disable-next-line no-unused-vars
+    ids: Ids,
+    // eslint-disable-next-line no-unused-vars
+    useHeavyModel?: boolean
+  ): Promise<[string, Ids]>
+}
+
+class OpenAIClient implements ModelClient {
+  private readonly api: OpenAI
+  private readonly options: Options
+
+  private isThinkingModel(model: string): boolean {
+    // Match OpenAI thinking models: o1, o1-preview, o1-mini, o3, o3-mini, o4, o4-mini, etc.
+    return /^o[0-9]+(-preview|-mini)?$/i.test(model)
+  }
+
+  constructor(options: Options) {
+    this.options = options
+    this.api = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+      organization: process.env.OPENAI_API_ORG,
+      baseURL: options.modelConfig.apiBaseUrl || 'https://api.openai.com/v1',
+      maxRetries: options.modelConfig.retries,
+      timeout: options.modelConfig.timeoutMS
+    })
+  }
+
+  async chat(
+    message: string,
+    ids: Ids,
+    useHeavyModel = false
+  ): Promise<[string, Ids]> {
+    if (!message) return ['', {}]
+
+    const model = useHeavyModel
+      ? this.options.modelConfig.heavyModel
+      : this.options.modelConfig.lightModel
+    const tokenLimit = useHeavyModel
+      ? this.options.heavyTokenLimits.responseTokens
+      : this.options.lightTokenLimits.responseTokens
+    const messages: Array<ChatCompletionMessageParam> = []
+
+    // OpenAI thinking models (o1, o3, etc.) don't support system messages
+    if (!this.isThinkingModel(model)) {
+      messages.push({
+        role: 'system',
+        content: this.options.systemMessage
+      })
+    }
+
+    if (ids.parentMessageId && ids.content) {
+      messages.push({
+        role: 'assistant',
+        content: ids.content
+      })
+    }
+
+    messages.push({
+      role: 'user',
+      content: message
+    })
+
+    try {
+      const response = await pRetry(
+        async () => {
+          const params: any = {
+            model,
+            messages
+          }
+
+          // Configure parameters based on model type
+          if (this.isThinkingModel(model)) {
+            // Thinking models use max_completion_tokens instead of max_tokens
+            // eslint-disable-next-line camelcase
+            params.max_completion_tokens = tokenLimit
+          } else {
+            // Standard models use max_tokens and temperature
+            // eslint-disable-next-line camelcase
+            params.max_tokens = tokenLimit
+            params.temperature = this.options.modelConfig.temperature
+          }
+
+          const completion = await this.api.chat.completions.create(params)
+          return completion
+        },
+        {retries: this.options.modelConfig.retries}
+      )
+
+      const content = response.choices[0]?.message?.content || ''
+      const cleanedContent = content.startsWith('with ')
+        ? content.substring(5)
+        : content
+
+      return [
+        cleanedContent,
+        {
+          parentMessageId: response.id,
+          conversationId: undefined,
+          content: cleanedContent
+        }
+      ]
+    } catch (e: unknown) {
+      if (e instanceof OpenAI.APIError) {
+        warning(`Failed to send message to OpenAI: ${e}, backtrace: ${e.stack}`)
+      } else {
+        warning(`Unexpected error while sending message to OpenAI: ${e}`)
+      }
+      return ['', {}]
+    }
+  }
+}
+
+class AnthropicClient implements ModelClient {
+  private readonly client: Anthropic
+  private readonly options: Options
+
+  constructor(options: Options) {
+    this.options = options
+    this.client = new Anthropic({
+      apiKey: process.env.ANTHROPIC_API_KEY || ''
+    })
+  }
+
+  async chat(
+    message: string,
+    ids: Ids,
+    useHeavyModel = false
+  ): Promise<[string, Ids]> {
+    if (!message) return ['', {}]
+
+    const model = useHeavyModel
+      ? this.options.modelConfig.heavyModel
+      : this.options.modelConfig.lightModel
+    const tokenLimit = useHeavyModel
+      ? this.options.heavyTokenLimits.responseTokens
+      : this.options.lightTokenLimits.responseTokens
+
+    try {
+      const params: Anthropic.MessageCreateParams = {
+        model,
+        // eslint-disable-next-line camelcase
+        max_tokens: tokenLimit,
+        system: this.options.systemMessage,
+        messages: [
+          {
+            role: 'user',
+            content: message
+          },
+          ...(ids.content
+            ? [
+                {
+                  role: 'assistant',
+                  content: ids.content
+                } as const
+              ]
+            : [])
+        ]
+      }
+
+      const response = await pRetry(() => this.client.messages.create(params), {
+        retries: this.options.modelConfig.retries
+      })
+
+      let responseText = ''
+      if (response.content && Array.isArray(response.content)) {
+        const textContent = response.content.find(item => item.type === 'text')
+        if (textContent && 'text' in textContent) {
+          responseText = textContent.text.trim()
+        }
+      }
+      
+      if (this.options.debug) {
+        if (responseText === '') {
+          info(`Anthropic returned empty response for model ${model}`)
+          info(`Full response structure: ${JSON.stringify(response.content)}`)
+        } else {
+          info(`Anthropic response length: ${responseText.length} characters`)
+        }
+      }
+
+      return [
+        responseText,
+        {
+          parentMessageId: response.id,
+          content: responseText
+        }
+      ]
+    } catch (e: unknown) {
+      warning(`Failed to send message to Anthropic: ${e}`)
+      return ['', {}]
+    }
+  }
+}
 
 // define type to save parentMessageId and conversationId
 export interface Ids {
   parentMessageId?: string
   conversationId?: string
+  content?: string
 }
 
 export class Bot {
-  private readonly api: ChatGPTAPI | null = null // not free
-
+  private readonly client: ModelClient
   private readonly options: Options
 
-  constructor(options: Options, openaiOptions: OpenAIOptions) {
+  constructor(options: Options) {
     this.options = options
-    if (process.env.OPENAI_API_KEY) {
-      const currentDate = new Date().toISOString().split('T')[0]
-      const systemMessage = `${options.systemMessage} 
-Knowledge cutoff: ${openaiOptions.tokenLimits.knowledgeCutOff}
-Current date: ${currentDate}
 
-IMPORTANT: Entire response must be in the language with ISO code: ${options.language}
-`
-
-      this.api = new ChatGPTAPI({
-        apiBaseUrl: options.apiBaseUrl,
-        systemMessage,
-        apiKey: process.env.OPENAI_API_KEY,
-        apiOrg: process.env.OPENAI_API_ORG ?? undefined,
-        debug: options.debug,
-        maxModelTokens: openaiOptions.tokenLimits.maxTokens,
-        maxResponseTokens: openaiOptions.tokenLimits.responseTokens,
-        completionParams: {
-          temperature: options.openaiModelTemperature,
-          model: openaiOptions.model
+    switch (options.modelConfig.provider) {
+      case 'openai':
+        if (!process.env.OPENAI_API_KEY) {
+          throw new Error(
+            'OPENAI_API_KEY environment variable is not available'
+          )
         }
-      })
-    } else {
-      const err =
-        "Unable to initialize the OpenAI API, both 'OPENAI_API_KEY' environment variable are not available"
-      throw new Error(err)
+        this.client = new OpenAIClient(options)
+        break
+
+      case 'anthropic':
+        if (!process.env.ANTHROPIC_API_KEY) {
+          throw new Error(
+            'ANTHROPIC_API_KEY environment variable is not available'
+          )
+        }
+        this.client = new AnthropicClient(options)
+        break
+
+      default:
+        throw new Error(
+          `Unsupported model provider: ${options.modelConfig.provider}`
+        )
     }
   }
 
-  chat = async (message: string, ids: Ids): Promise<[string, Ids]> => {
-    let res: [string, Ids] = ['', {}]
-    try {
-      res = await this.chat_(message, ids)
-      return res
-    } catch (e: unknown) {
-      if (e instanceof ChatGPTError) {
-        warning(`Failed to chat: ${e}, backtrace: ${e.stack}`)
-      }
-      return res
-    }
-  }
-
-  private readonly chat_ = async (
+  chat = async (
     message: string,
-    ids: Ids
+    ids: Ids,
+    useHeavyModel = false
   ): Promise<[string, Ids]> => {
-    // record timing
-    const start = Date.now()
     if (!message) {
       return ['', {}]
     }
 
-    let response: ChatMessage | undefined
+    const start = Date.now()
+    const result = await this.client.chat(message, ids, useHeavyModel)
+    const end = Date.now()
 
-    if (this.api != null) {
-      const opts: SendMessageOptions = {
-        timeoutMs: this.options.openaiTimeoutMS
-      }
-      if (ids.parentMessageId) {
-        opts.parentMessageId = ids.parentMessageId
-      }
-      try {
-        response = await pRetry(() => this.api!.sendMessage(message, opts), {
-          retries: this.options.openaiRetries
-        })
-      } catch (e: unknown) {
-        if (e instanceof ChatGPTError) {
-          info(
-            `response: ${response}, failed to send message to openai: ${e}, backtrace: ${e.stack}`
-          )
-        }
-      }
-      const end = Date.now()
-      info(`response: ${JSON.stringify(response)}`)
-      info(
-        `openai sendMessage (including retries) response time: ${
-          end - start
-        } ms`
-      )
-    } else {
-      setFailed('The OpenAI API is not initialized')
-    }
-    let responseText = ''
-    if (response != null) {
-      responseText = response.text
-    } else {
-      warning('openai response is null')
-    }
-    // remove the prefix "with " in the response
-    if (responseText.startsWith('with ')) {
-      responseText = responseText.substring(5)
-    }
     if (this.options.debug) {
-      info(`openai responses: ${responseText}`)
+      info(`Model response time: ${end - start} ms`)
     }
-    const newIds: Ids = {
-      parentMessageId: response?.id,
-      conversationId: response?.conversationId
-    }
-    return [responseText, newIds]
+
+    return result
   }
 }

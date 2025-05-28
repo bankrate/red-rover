@@ -13,7 +13,7 @@ GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 GITHUB_REPO = os.getenv("GITHUB_REPO")
 
 def count_tokens_tiktoken(text):
-    num_token = len(tiktoken.encoding_for_model("gpt-3.5-turbo").encode(text))
+    num_token = len(tiktoken.encoding_for_model("gpt-4o-mini").encode(text))
     return num_token
 
 

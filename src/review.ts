@@ -32,8 +32,8 @@ export const codeReview = async (
 ): Promise<void> => {
   const commenter: Commenter = new Commenter()
 
-  const openaiConcurrencyLimit = pLimit(options.openaiConcurrencyLimit)
-  const githubConcurrencyLimit = pLimit(options.githubConcurrencyLimit)
+  const modelConcurrencyLimit = pLimit(options.concurrencyLimits.model)
+  const githubConcurrencyLimit = pLimit(options.concurrencyLimits.github)
 
   if (
     context.eventName !== 'pull_request' &&
@@ -131,9 +131,10 @@ export const codeReview = async (
   }
 
   // Filter out any file that is changed compared to the incremental changes
-  const files = targetBranchFiles.filter(targetBranchFile =>
+  const files = targetBranchFiles.filter((targetBranchFile: any) =>
     incrementalFiles.some(
-      incrementalFile => incrementalFile.filename === targetBranchFile.filename
+      (incrementalFile: any) =>
+        incrementalFile.filename === targetBranchFile.filename
     )
   )
 
@@ -338,12 +339,13 @@ ${
 
     // summarize content
     try {
-      const [summarizeResp] = await lightBot.chat(summarizePrompt, {})
+      const [summarizeResp] = await lightBot.chat(summarizePrompt, {}, false)
 
       if (summarizeResp === '') {
-        info('summarize: nothing fetched from RedRover')
+        info(`summarize: nothing fetched from RedRover for ${filename}`)
         summariesFailed.push(`${filename} (nothing fetched from RedRover)`)
-        return null
+        // Instead of returning null, return a basic summary so reviews can still proceed
+        return [filename, 'Summary unavailable', true]
       } else {
         if (options.reviewSimpleChanges === false) {
           // parse the comment to look for triage classification
@@ -378,7 +380,7 @@ ${
   for (const [filename, fileContent, fileDiff] of filesAndChanges) {
     if (options.maxFiles <= 0 || summaryPromises.length < options.maxFiles) {
       summaryPromises.push(
-        openaiConcurrencyLimit(
+        modelConcurrencyLimit(
           async () => await doSummary(filename, fileContent, fileDiff)
         )
       )
@@ -405,7 +407,8 @@ ${filename}: ${summary}
       // ask chatgpt to summarize the summaries
       const [summarizeResp] = await heavyBot.chat(
         prompts.renderSummarizeChangesets(inputs),
-        {}
+        {},
+        true
       )
       if (summarizeResp === '') {
         warning('summarize: nothing fetched from RedRover')
@@ -418,7 +421,8 @@ ${filename}: ${summary}
   // final summary
   const [summarizeFinalResponse] = await heavyBot.chat(
     prompts.renderSummarize(inputs),
-    {}
+    {},
+    true
   )
   if (summarizeFinalResponse === '') {
     info('summarize: nothing fetched from RedRover')
@@ -428,7 +432,8 @@ ${filename}: ${summary}
     // final release notes
     const [releaseNotesResponse] = await heavyBot.chat(
       prompts.renderSummarizeReleaseNotes(inputs),
-      {}
+      {},
+      true
     )
     if (releaseNotesResponse === '') {
       info('release notes: nothing fetched from RedRover')
@@ -449,7 +454,8 @@ ${filename}: ${summary}
   // generate a short summary as well
   const [summarizeShortResponse] = await heavyBot.chat(
     prompts.renderSummarizeShort(inputs),
-    {}
+    {},
+    true
   )
   inputs.shortSummary = summarizeShortResponse
 
@@ -611,11 +617,12 @@ ${commentChain}
         // perform review
         try {
           const [response] = await heavyBot.chat(
-            prompts.renderReviewFileDiff(ins),
-            {}
+            prompts.renderReviewFileDiff(ins, options.reviewSimpleChanges),
+            {},
+            true
           )
           if (response === '') {
-            info('review: nothing obtained from openai')
+            info('review: nothing obtained from model')
             reviewsFailed.push(`${filename} (no response)`)
             return
           }
@@ -678,7 +685,7 @@ ${commentChain}
     for (const [filename, fileContent, , patches] of filesAndChangesReview) {
       if (options.maxFiles <= 0 || reviewPromises.length < options.maxFiles) {
         reviewPromises.push(
-          openaiConcurrencyLimit(async () => {
+          modelConcurrencyLimit(async () => {
             await doReview(filename, fileContent, patches)
           })
         )

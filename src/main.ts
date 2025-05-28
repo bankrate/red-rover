@@ -6,10 +6,19 @@ import {
   warning
 } from '@actions/core'
 import {Bot} from './bot'
-import {OpenAIOptions, Options} from './options'
+import {Options, ModelProvider} from './options'
 import {Prompts} from './prompts'
 import {codeReview} from './review'
 import {handleReviewComment} from './review-comment'
+
+function validateModelProvider(input: string): ModelProvider {
+  if (input !== 'openai' && input !== 'anthropic') {
+    throw new Error(
+      `Invalid model_provider: ${input}. Must be either 'openai' or 'anthropic'.`
+    )
+  }
+  return input
+}
 
 async function run(): Promise<void> {
   const options: Options = new Options(
@@ -22,14 +31,15 @@ async function run(): Promise<void> {
     getBooleanInput('review_comment_lgtm'),
     getMultilineInput('path_filters'),
     getInput('system_message'),
-    getInput('openai_light_model'),
-    getInput('openai_heavy_model'),
-    getInput('openai_model_temperature'),
-    getInput('openai_retries'),
-    getInput('openai_timeout_ms'),
-    getInput('openai_concurrency_limit'),
+    validateModelProvider(getInput('model_provider')),
+    getInput('light_model') || getInput('openai_light_model'),
+    getInput('heavy_model') || getInput('openai_heavy_model'),
+    getInput('model_temperature'),
+    getInput('model_retries'),
+    getInput('model_timeout_ms'),
+    getInput('model_concurrency_limit'),
     getInput('github_concurrency_limit'),
-    getInput('openai_base_url'),
+    getInput('model_base_url'),
     getInput('language')
   )
 
@@ -47,26 +57,20 @@ async function run(): Promise<void> {
 
   let lightBot: Bot | null = null
   try {
-    lightBot = new Bot(
-      options,
-      new OpenAIOptions(options.openaiLightModel, options.lightTokenLimits)
-    )
+    lightBot = new Bot(options)
   } catch (e: any) {
     warning(
-      `Skipped: failed to create summary bot, please check your openai_api_key: ${e}, backtrace: ${e.stack}`
+      `Skipped: failed to create summary bot, please check your model API key: ${e}, backtrace: ${e.stack}`
     )
     return
   }
 
   let heavyBot: Bot | null = null
   try {
-    heavyBot = new Bot(
-      options,
-      new OpenAIOptions(options.openaiHeavyModel, options.heavyTokenLimits)
-    )
+    heavyBot = new Bot(options)
   } catch (e: any) {
     warning(
-      `Skipped: failed to create review bot, please check your openai_api_key: ${e}, backtrace: ${e.stack}`
+      `Skipped: failed to create review bot, please check your model API key: ${e}, backtrace: ${e.stack}`
     )
     return
   }
@@ -102,4 +106,12 @@ process
     warning(`Uncaught Exception thrown: ${e}, backtrace: ${e.stack}`)
   })
 
-await run()
+// Start the application
+void (async () => {
+  try {
+    await run()
+  } catch (error) {
+    setFailed(`Unhandled error: ${error}`)
+    process.exit(1)
+  }
+})()
